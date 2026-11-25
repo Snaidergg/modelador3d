@@ -6,6 +6,7 @@ import simd
 public final class MeshRenderer: NSObject, MTKViewDelegate {
     public let device: MTLDevice
     public var camera = OrbitCamera()
+    /// Tras cambiarlo hay que volver a llamar a `setMesh`.
     public var smoothShading = true
     public var baseColor = SIMD4<Float>(0.78, 0.80, 0.84, 1)
 
@@ -13,7 +14,10 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
     private let pipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     private var vertexBuffer: MTLBuffer?
-    private var vertexCount = 0
+    private var indexBuffer: MTLBuffer?
+    private var drawCount = 0
+    /// Topología del último índice subido: si no cambia (escultura), no se vuelve a subir.
+    private var uploadedTriangles: [SIMD3<UInt32>] = []
 
     struct GPUVertex {
         var position: SIMD3<Float>
@@ -76,32 +80,90 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         return d
     }
 
-    /// Sube la malla a la GPU. `frameCamera` la encuadra en pantalla.
-    public func setMesh(_ mesh: Mesh, frameCamera: Bool) {
-        if frameCamera { camera.frame(mesh.bounds) }
+    /// Encuadra un modelo completo en pantalla.
+    public func frame(_ bounds: BoundingBox) {
+        camera.frame(bounds)
+    }
+
+    /// Sube la malla a la GPU. Es barato llamarlo en cada movimiento del pincel:
+    /// con sombreado suave solo se reenvían los vértices, no los índices.
+    public func setMesh(_ mesh: Mesh) {
         guard !mesh.isEmpty else {
             vertexBuffer = nil
-            vertexCount = 0
+            indexBuffer = nil
+            uploadedTriangles = []
+            drawCount = 0
             return
         }
 
-        let normals = smoothShading ? mesh.vertexNormals() : []
-        var vertices: [GPUVertex] = []
-        vertices.reserveCapacity(mesh.triangleCount * 3)
-        for t in mesh.triangles.indices {
-            let tri = mesh.triangles[t]
-            let faceNormal = smoothShading ? SIMD3<Float>.zero : mesh.faceNormal(t)
-            for i in [tri.x, tri.y, tri.z] {
-                let index = Int(i)
-                vertices.append(GPUVertex(position: mesh.positions[index],
-                                          normal: smoothShading ? normals[index] : faceNormal))
+        if smoothShading {
+            let normals = mesh.vertexNormals()
+            var vertices: [GPUVertex] = []
+            vertices.reserveCapacity(mesh.vertexCount)
+            for i in mesh.positions.indices {
+                vertices.append(GPUVertex(position: mesh.positions[i], normal: normals[i]))
             }
+            vertexBuffer = makeBuffer(vertices)
+
+            if indexBuffer == nil || mesh.triangles != uploadedTriangles {
+                var indices: [UInt32] = []
+                indices.reserveCapacity(mesh.triangleCount * 3)
+                for t in mesh.triangles {
+                    indices.append(t.x)
+                    indices.append(t.y)
+                    indices.append(t.z)
+                }
+                indexBuffer = makeBuffer(indices)
+                uploadedTriangles = mesh.triangles
+            }
+        } else {
+            // Sombreado plano: cada triángulo con sus propios vértices y la normal de la cara.
+            var vertices: [GPUVertex] = []
+            vertices.reserveCapacity(mesh.triangleCount * 3)
+            for t in mesh.triangles.indices {
+                let tri = mesh.triangles[t]
+                let n = mesh.faceNormal(t)
+                vertices.append(GPUVertex(position: mesh.positions[Int(tri.x)], normal: n))
+                vertices.append(GPUVertex(position: mesh.positions[Int(tri.y)], normal: n))
+                vertices.append(GPUVertex(position: mesh.positions[Int(tri.z)], normal: n))
+            }
+            vertexBuffer = makeBuffer(vertices)
+            indexBuffer = nil
+            uploadedTriangles = []
         }
-        vertexBuffer = device.makeBuffer(bytes: vertices,
-                                         length: vertices.count * MemoryLayout<GPUVertex>.stride,
-                                         options: .storageModeShared)
-        vertexCount = vertices.count
+        drawCount = mesh.triangleCount * 3
     }
+
+    private func makeBuffer<T>(_ array: [T]) -> MTLBuffer? {
+        guard !array.isEmpty else { return nil }
+        return array.withUnsafeBytes { raw in
+            device.makeBuffer(bytes: raw.baseAddress!, length: raw.count, options: .storageModeShared)
+        }
+    }
+
+    // MARK: Conversión pantalla ↔ mundo
+
+    /// Rayo que sale de la cámara y pasa por un punto de la pantalla (en puntos de UIKit).
+    public func ray(through point: CGPoint, viewSize: CGSize) -> Ray {
+        let w = Float(max(viewSize.width, 1))
+        let h = Float(max(viewSize.height, 1))
+        let ndc = SIMD2<Float>(2 * Float(point.x) / w - 1, 1 - 2 * Float(point.y) / h)
+        let inverse = simd_inverse(camera.projectionMatrix(aspect: w / h) * camera.viewMatrix())
+        func unproject(_ z: Float) -> SIMD3<Float> {
+            let p = inverse * SIMD4<Float>(ndc.x, ndc.y, z, 1)
+            return SIMD3<Float>(p.x, p.y, p.z) / p.w
+        }
+        let near = unproject(0)
+        let far = unproject(1)
+        return Ray(origin: near, direction: far - near)
+    }
+
+    /// Cuántos mm del modelo ocupa un punto de pantalla a cierta distancia de la cámara.
+    public func worldUnitsPerPoint(atDistance distance: Float, viewHeight: CGFloat) -> Float {
+        2 * distance * tan(camera.fovY * 0.5) / Float(max(viewHeight, 1))
+    }
+
+    // MARK: MTKViewDelegate
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
@@ -117,7 +179,7 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         // Nuestras caras exteriores van en sentido antihorario (Metal asume horario por defecto).
         encoder.setFrontFacing(.counterClockwise)
 
-        if let vertexBuffer, vertexCount > 0 {
+        if let vertexBuffer, drawCount > 0 {
             let size = view.drawableSize
             let aspect = Float(size.width / max(size.height, 1))
             let viewProjection = camera.projectionMatrix(aspect: aspect) * camera.viewMatrix()
@@ -128,7 +190,15 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
             encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+            if let indexBuffer {
+                encoder.drawIndexedPrimitives(type: .triangle,
+                                              indexCount: drawCount,
+                                              indexType: .uint32,
+                                              indexBuffer: indexBuffer,
+                                              indexBufferOffset: 0)
+            } else {
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: drawCount)
+            }
         }
 
         encoder.endEncoding()

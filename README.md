@@ -28,6 +28,7 @@ modelador3d/
 │   ├── Sources/MeshIO/         STL (binario/ASCII) y OBJ
 │   ├── Sources/Rendering/      Render en Metal y cámara orbital
 │   ├── Sources/PrintPrep/      Análisis de imprimibilidad (estanqueidad, volumen, normales)
+│   ├── Sources/Sculpt/         Pinceles de escultura y simetría
 │   └── Tests/                  Pruebas automáticas (se ejecutan en cada compilación)
 └── .github/workflows/          Compilación en la nube → .ipa
 ```
@@ -85,15 +86,19 @@ Se ejecutan solas en GitHub Actions. En una Mac (o en Linux con Swift):
 swift test --package-path Packages/M3DKit
 ```
 
-## Estado actual (v0.1)
+## Estado actual (v0.2)
 - Visor 3D en Metal: girar (1 dedo), desplazar (2 dedos), zoom (pellizcar), encuadrar (doble toque).
+- **Escultura digital** (botón del pincel): Dibujar, Inflar, Suavizar, Aplanar y Arrastrar;
+  tamaño e intensidad; Hundir (invertir); simetría en X; "Más detalle" (subdividir ×4).
+  En modo esculpir, un dedo fuera del modelo gira la cámara. Cada trazo se deshace de una vez.
+- Base para esculpir: esfera geodésica de 40 mm y 20 480 triángulos.
 - Nueva esfera o cubo; importar STL/OBJ; exportar STL binario.
 - Medidas en mm, volumen, superficie y diagnóstico de imprimibilidad.
-- Escalar a una altura en mm, apoyar en la cama, soldar vértices, invertir normales.
+- Escalar a una altura en mm, apoyar en la cama, soldar vértices, invertir normales, subdividir.
 - Deshacer/rehacer.
 
 ## Próximas fases
-1. Escultura digital: pinceles para arrastrar, inflar, suavizar y aplanar, con simetría.
+1. Mejoras de escultura: cursor del pincel, remallado por vóxeles, aceleración (BVH) para mallas grandes.
 2. Captura con **Object Capture** (LiDAR) directamente en el iPhone.
 3. Booleanas y primitivas paramétricas (bases, agujeros, encastres).
 4. Exportación 3MF y reparación automática de mallas.

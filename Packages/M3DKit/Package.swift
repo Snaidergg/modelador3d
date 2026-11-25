@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "MeshIO", targets: ["MeshIO"]),
         .library(name: "Rendering", targets: ["Rendering"]),
         .library(name: "PrintPrep", targets: ["PrintPrep"]),
+        .library(name: "Sculpt", targets: ["Sculpt"]),
     ],
     targets: [
         // Estructuras de malla, primitivas y transformaciones. No depende de nada.
@@ -21,6 +22,8 @@ let package = Package(
         .target(name: "Rendering", dependencies: ["Geometry"]),
         // Análisis y reparación para impresión 3D.
         .target(name: "PrintPrep", dependencies: ["Geometry"]),
-        .testTarget(name: "M3DKitTests", dependencies: ["Geometry", "MeshIO", "PrintPrep"]),
+        // Escultura digital: pinceles, simetría.
+        .target(name: "Sculpt", dependencies: ["Geometry"]),
+        .testTarget(name: "M3DKitTests", dependencies: ["Geometry", "MeshIO", "PrintPrep", "Sculpt"]),
     ]
 )

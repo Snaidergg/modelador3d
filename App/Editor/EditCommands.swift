@@ -5,7 +5,13 @@ import simd
 /// Permite deshacer/rehacer y, más adelante, un historial editable (modelado paramétrico).
 protocol EditCommand {
     var name: String { get }
+    /// Si tras aplicarlo la cámara debe volver a encuadrar el modelo.
+    var reframes: Bool { get }
     func apply(to mesh: Mesh) -> Mesh
+}
+
+extension EditCommand {
+    var reframes: Bool { true }
 }
 
 /// Sustituye el modelo completo (nueva primitiva, importación, resultado de un escaneo).
@@ -35,17 +41,26 @@ struct PlaceOnBedCommand: EditCommand {
 /// Une vértices duplicados (repara mallas importadas "sueltas").
 struct WeldCommand: EditCommand {
     let name = "Soldar vértices"
+    var reframes: Bool { false }
     func apply(to mesh: Mesh) -> Mesh { mesh.welded(tolerance: 0.01) }
 }
 
 /// Invierte las normales.
 struct FlipNormalsCommand: EditCommand {
     let name = "Invertir normales"
+    var reframes: Bool { false }
     func apply(to mesh: Mesh) -> Mesh { mesh.flipped() }
 }
 
+/// Multiplica por 4 los triángulos para tener más detalle al esculpir.
+struct SubdivideCommand: EditCommand {
+    let name = "Subdividir"
+    var reframes: Bool { false }
+    func apply(to mesh: Mesh) -> Mesh { mesh.subdivided() }
+}
+
 /// Historial de deshacer/rehacer basado en instantáneas.
-/// Suficiente para el MVP; para escultura se cambiará por deltas de vértices.
+/// Suficiente por ahora; con mallas muy grandes se cambiará por deltas de vértices.
 struct CommandHistory {
     private struct Entry {
         let name: String

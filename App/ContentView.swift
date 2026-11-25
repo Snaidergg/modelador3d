@@ -9,9 +9,22 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            MetalViewport(mesh: model.mesh, version: model.meshVersion, smoothShading: model.smoothShading)
+            MetalViewport(mesh: model.mesh,
+                          version: model.meshVersion,
+                          frameVersion: model.frameVersion,
+                          smoothShading: model.smoothShading,
+                          mode: model.mode,
+                          sculptSettings: model.sculpt,
+                          onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) })
                 .ignoresSafeArea(edges: .bottom)
-                .overlay(alignment: .bottom) { statusBar }
+                .overlay(alignment: .top) { statusBar }
+                .overlay(alignment: .bottom) {
+                    if model.mode == .sculpt {
+                        SculptPanel(settings: $model.sculpt,
+                                    triangleCount: model.report.triangleCount,
+                                    onSubdivide: { model.subdivide() })
+                    }
+                }
                 .navigationTitle(model.fileName)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
@@ -34,7 +47,7 @@ struct ContentView: View {
             InspectorView(model: model)
                 .presentationDetents([.medium, .large])
         }
-        .alert("Error",
+        .alert("Aviso",
                isPresented: Binding(get: { model.errorMessage != nil },
                                     set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -52,9 +65,14 @@ struct ContentView: View {
                 .disabled(!model.canRedo)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                model.mode = model.mode == .sculpt ? .view : .sculpt
+            } label: {
+                Image(systemName: model.mode == .sculpt ? "paintbrush.pointed.fill" : "paintbrush.pointed")
+            }
             Menu {
                 Section("Nuevo modelo") {
-                    Button("Esfera", systemImage: "circle") { model.newSphere() }
+                    Button("Esfera para esculpir", systemImage: "circle") { model.newSphere() }
                     Button("Cubo", systemImage: "cube") { model.newBox() }
                 }
                 Button("Importar STL u OBJ…", systemImage: "square.and.arrow.down") { showImporter = true }
@@ -74,16 +92,17 @@ struct ContentView: View {
     private var statusBar: some View {
         let r = model.report
         return HStack(spacing: 12) {
-            Label("\(r.triangleCount.formatted()) triángulos", systemImage: "triangle")
+            Label("\(r.triangleCount.formatted())", systemImage: "triangle")
             Text("\(Format.mm(r.size.x)) × \(Format.mm(r.size.y)) × \(Format.mm(r.size.z)) mm")
             Image(systemName: r.isWatertight ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(r.isWatertight ? .green : .orange)
         }
         .font(.caption.monospacedDigit())
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: Capsule())
-        .padding(.bottom, 12)
+        .padding(.top, 8)
+        .allowsHitTesting(false)
     }
 }
 

@@ -18,6 +18,16 @@ public struct OrbitCamera: Sendable {
     /// Dirección desde el objetivo hacia la cámara (se usa como luz frontal).
     public var viewDirection: SIMD3<Float> { simd_normalize(eye - target) }
 
+    /// Vector "derecha" de la pantalla, en el mundo.
+    public var right: SIMD3<Float> {
+        simd_normalize(simd_cross(simd_normalize(target - eye), SIMD3<Float>(0, 1, 0)))
+    }
+
+    /// Vector "arriba" de la pantalla, en el mundo.
+    public var up: SIMD3<Float> {
+        simd_cross(right, simd_normalize(target - eye))
+    }
+
     public func viewMatrix() -> simd_float4x4 {
         Matrices.lookAt(eye: eye, target: target, up: SIMD3<Float>(0, 1, 0))
     }

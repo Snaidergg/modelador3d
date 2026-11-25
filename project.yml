@@ -11,8 +11,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
 
 packages:
   M3DKit:
@@ -53,6 +53,8 @@ targets:
         product: Rendering
       - package: M3DKit
         product: PrintPrep
+      - package: M3DKit
+        product: Sculpt
 
 schemes:
   Modelador3D:
