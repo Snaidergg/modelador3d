@@ -21,6 +21,7 @@ modelador3d/
 │   │   ├── EditCommands.swift  Operaciones + deshacer/rehacer (patrón Comando)
 │   │   ├── InspectorView.swift Panel de medidas e imprimibilidad
 │   │   └── MeshFileDocument.swift  Exportación a "Archivos"
+│   ├── Capture/                Escaneo guiado, fotos, video y reconstrucción 3D
 │   └── Viewport/
 │       └── MetalViewport.swift Puente SwiftUI ↔ Metal y gestos táctiles
 ├── Packages/M3DKit/            Núcleo, en módulos independientes y con pruebas
@@ -86,7 +87,11 @@ Se ejecutan solas en GitHub Actions. En una Mac (o en Linux con Swift):
 swift test --package-path Packages/M3DKit
 ```
 
-## Estado actual (v0.2)
+## Estado actual (v0.3)
+- **Captura 3D** (botón de la cámara), reconstrucción en el propio iPhone con Object Capture de Apple:
+  escaneo guiado (LiDAR), desde 20–200 fotos de la fototeca, o desde un video (extrae fotogramas).
+  El modelo se abre en el editor en mm; las capturas se guardan en *Archivos → Modelador 3D → Capturas*.
+- Importar USDZ y PLY además de STL/OBJ. Girar 90° en X/Y/Z.
 - Visor 3D en Metal: girar (1 dedo), desplazar (2 dedos), zoom (pellizcar), encuadrar (doble toque).
 - **Escultura digital** (botón del pincel): Dibujar, Inflar, Suavizar, Aplanar y Arrastrar;
   tamaño e intensidad; Hundir (invertir); simetría en X; "Más detalle" (subdividir ×4).
@@ -98,7 +103,7 @@ swift test --package-path Packages/M3DKit
 - Deshacer/rehacer.
 
 ## Próximas fases
-1. Mejoras de escultura: cursor del pincel, remallado por vóxeles, aceleración (BVH) para mallas grandes.
-2. Captura con **Object Capture** (LiDAR) directamente en el iPhone.
+1. Limpieza de capturas: recortar el suelo/fondo y cerrar agujeros para que sea imprimible.
+2. Mejoras de escultura: cursor del pincel, remallado por vóxeles, aceleración (BVH) para mallas grandes.
 3. Booleanas y primitivas paramétricas (bases, agujeros, encastres).
 4. Exportación 3MF y reparación automática de mallas.

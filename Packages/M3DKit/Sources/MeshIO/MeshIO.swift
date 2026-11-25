@@ -37,15 +37,19 @@ public enum UpAxis: Sendable {
 }
 
 public enum MeshFile {
-    public static let supportedExtensions = ["stl", "obj"]
-
     /// Carga un archivo según su extensión.
     public static func load(from url: URL) throws -> Mesh {
-        let data = try Data(contentsOf: url)
-        switch url.pathExtension.lowercased() {
-        case "stl": return try STLFormat.load(data)
-        case "obj": return try OBJFormat.load(data)
-        default: throw MeshIOError.unsupportedFormat(url.pathExtension)
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "stl": return try STLFormat.load(Data(contentsOf: url))
+        case "obj": return try OBJFormat.load(Data(contentsOf: url))
+        default:
+            #if canImport(ModelIO)
+            if ModelIOFormat.extensions.contains(ext) {
+                return try ModelIOFormat.load(url: url)
+            }
+            #endif
+            throw MeshIOError.unsupportedFormat(url.pathExtension)
         }
     }
 }

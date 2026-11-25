@@ -51,6 +51,14 @@ struct InspectorView: View {
                     }
                     Button("Apoyar en la cama", systemImage: "arrow.down.to.line") { model.perform(PlaceOnBedCommand()) }
                     Button("Subdividir (más detalle)", systemImage: "square.grid.3x3") { model.subdivide() }
+                    HStack {
+                        Text("Girar 90°")
+                        Spacer()
+                        Button("X") { model.perform(RotateCommand(axis: .x)) }
+                        Button("Y") { model.perform(RotateCommand(axis: .y)) }
+                        Button("Z") { model.perform(RotateCommand(axis: .z)) }
+                    }
+                    .buttonStyle(.bordered)
                     Button("Soldar vértices", systemImage: "link") { model.perform(WeldCommand()) }
                     Button("Invertir normales", systemImage: "arrow.triangle.2.circlepath") { model.perform(FlipNormalsCommand()) }
                 }

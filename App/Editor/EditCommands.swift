@@ -52,6 +52,23 @@ struct FlipNormalsCommand: EditCommand {
     func apply(to mesh: Mesh) -> Mesh { mesh.flipped() }
 }
 
+/// Gira 90° alrededor de un eje (útil cuando una captura queda de lado) y lo vuelve a apoyar en la cama.
+struct RotateCommand: EditCommand {
+    enum Axis: String { case x = "X", y = "Y", z = "Z" }
+    let axis: Axis
+    var degrees: Float = 90
+    var name: String { "Girar \(Int(degrees))° en \(axis.rawValue)" }
+    func apply(to mesh: Mesh) -> Mesh {
+        let vector: SIMD3<Float>
+        switch axis {
+        case .x: vector = SIMD3<Float>(1, 0, 0)
+        case .y: vector = SIMD3<Float>(0, 1, 0)
+        case .z: vector = SIMD3<Float>(0, 0, 1)
+        }
+        return mesh.rotated(degrees: degrees, axis: vector).recentered()
+    }
+}
+
 /// Multiplica por 4 los triángulos para tener más detalle al esculpir.
 struct SubdivideCommand: EditCommand {
     let name = "Subdividir"

@@ -67,6 +67,14 @@ public struct Mesh: Equatable, Sendable {
         scaled(by: SIMD3<Float>(repeating: factor))
     }
 
+    /// Gira el modelo alrededor del origen.
+    public func rotated(degrees: Float, axis: SIMD3<Float>) -> Mesh {
+        let q = simd_quatf(angle: degrees * .pi / 180, axis: simd_normalize(axis))
+        var m = self
+        m.positions = positions.map { q.act($0) }
+        return m
+    }
+
     /// Centra el modelo en X/Z y lo apoya sobre la cama de impresión (Y mínimo = 0).
     public func recentered() -> Mesh {
         guard !positions.isEmpty else { return self }

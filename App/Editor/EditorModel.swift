@@ -81,6 +81,14 @@ final class EditorModel: ObservableObject {
                                    mesh: Mesh.box(size: SIMD3<Float>(30, 30, 30)).recentered()))
     }
 
+    /// Abre en el editor el modelo que salió de un escaneo, fotos o video.
+    func importCaptured(_ captured: Mesh) {
+        smoothShading = true
+        mode = .view
+        fileName = "captura"
+        perform(ReplaceMeshCommand(name: "Captura 3D", mesh: captured))
+    }
+
     func subdivide() {
         guard mesh.triangleCount * 4 <= EditorModel.maxTriangles else {
             errorMessage = "El modelo ya tiene \(mesh.triangleCount.formatted()) triángulos. "

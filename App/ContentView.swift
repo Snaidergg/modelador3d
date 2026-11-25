@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var showExporter = false
     @State private var showInspector = false
+    @State private var showCapture = false
     @State private var exportDocument: MeshFileDocument?
 
     var body: some View {
@@ -29,7 +30,7 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
         }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.stlModel, .objModel]) { result in
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.stlModel, .objModel, .usdz, .plyModel]) { result in
             switch result {
             case .success(let url): model.importFile(at: url)
             case .failure(let error): model.errorMessage = error.localizedDescription
@@ -42,6 +43,9 @@ struct ContentView: View {
             if case .failure(let error) = result {
                 model.errorMessage = error.localizedDescription
             }
+        }
+        .fullScreenCover(isPresented: $showCapture) {
+            CaptureFlowView { captured in model.importCaptured(captured) }
         }
         .sheet(isPresented: $showInspector) {
             InspectorView(model: model)
@@ -65,6 +69,7 @@ struct ContentView: View {
                 .disabled(!model.canRedo)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button { showCapture = true } label: { Image(systemName: "camera.viewfinder") }
             Button {
                 model.mode = model.mode == .sculpt ? .view : .sculpt
             } label: {
@@ -75,7 +80,7 @@ struct ContentView: View {
                     Button("Esfera para esculpir", systemImage: "circle") { model.newSphere() }
                     Button("Cubo", systemImage: "cube") { model.newBox() }
                 }
-                Button("Importar STL u OBJ…", systemImage: "square.and.arrow.down") { showImporter = true }
+                Button("Importar STL, OBJ, USDZ o PLY…", systemImage: "square.and.arrow.down") { showImporter = true }
             } label: {
                 Image(systemName: "plus")
             }
