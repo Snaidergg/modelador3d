@@ -1,0 +1,61 @@
+# Definición del proyecto Xcode para XcodeGen.
+# El archivo .xcodeproj NO se guarda en git: GitHub Actions lo genera desde aquí
+# (así se puede editar el proyecto desde Windows sin Xcode).
+name: Modelador3D
+options:
+  bundleIdPrefix: dev.modelador3d
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  M3DKit:
+    path: Packages/M3DKit
+
+targets:
+  Modelador3D:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: Modelador 3D
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [metal]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: La cámara se usa para fotografiar y escanear objetos y convertirlos en modelos 3D.
+        LSSupportsOpeningDocumentsInPlace: true
+        UIFileSharingEnabled: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.modelador3d.app
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: M3DKit
+        product: Geometry
+      - package: M3DKit
+        product: MeshIO
+      - package: M3DKit
+        product: Rendering
+      - package: M3DKit
+        product: PrintPrep
+
+schemes:
+  Modelador3D:
+    build:
+      targets:
+        Modelador3D: all

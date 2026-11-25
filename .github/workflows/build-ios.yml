@@ -1,0 +1,53 @@
+name: Compilar app iOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Versión de Xcode
+        run: xcodebuild -version
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Pruebas del núcleo (geometría, archivos, imprimibilidad)
+        run: swift test --package-path Packages/M3DKit
+
+      - name: Generar proyecto Xcode
+        run: xcodegen generate
+
+      - name: Compilar para iPhone (sin firmar)
+        run: |
+          xcodebuild build \
+            -project Modelador3D.xcodeproj \
+            -scheme Modelador3D \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Empaquetar .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Modelador3D.app Payload/
+          zip -qry Modelador3D.ipa Payload
+
+      - name: Publicar .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modelador3D-ipa
+          path: Modelador3D.ipa
+          retention-days: 14
