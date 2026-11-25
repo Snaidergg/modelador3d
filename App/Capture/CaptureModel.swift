@@ -286,19 +286,30 @@ final class CaptureModel: ObservableObject {
                 try session.process(requests: [.modelFile(url: folder.model, detail: .reduced)])
 
                 var produced: URL?
-                for try await output in session.outputs {
+                // La secuencia de eventos NO termina sola al acabar: hay que salir del bucle
+                // al recibir `processingComplete` (o en cuanto llega el modelo, ya que pedimos uno solo).
+                events: for try await output in session.outputs {
                     switch output {
                     case .requestProgress(_, let fraction):
                         self.phase = .reconstructing(fraction)
                     case .requestComplete(_, let result):
-                        if case .modelFile(let url) = result { produced = url }
+                        if case .modelFile(let url) = result {
+                            produced = url
+                            break events
+                        }
                     case .requestError(_, let error):
                         throw error
                     case .processingCancelled:
                         throw CancellationError()
+                    case .processingComplete:
+                        break events
                     default:
                         break
                     }
+                }
+                // Por si el aviso se perdió pero el archivo ya existe.
+                if produced == nil, FileManager.default.fileExists(atPath: folder.model.path) {
+                    produced = folder.model
                 }
 
                 guard let produced else { throw CaptureError.message("La reconstrucción no produjo un modelo.") }
