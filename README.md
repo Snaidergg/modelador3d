@@ -87,7 +87,9 @@ Se ejecutan solas en GitHub Actions. En una Mac (o en Linux con Swift):
 swift test --package-path Packages/M3DKit
 ```
 
-## Estado actual (v0.3)
+## Estado actual (v0.4)
+- **Limpieza de capturas** (panel ☰): recortar con un plano horizontal (se ve en rojo y se mueve con un
+  deslizador; el corte se tapa solo), quitar piezas sueltas, cerrar agujeros y "Reparar para imprimir".
 - **Captura 3D** (botón de la cámara), reconstrucción en el propio iPhone con Object Capture de Apple:
   escaneo guiado (LiDAR), desde 20–200 fotos de la fototeca, o desde un video (extrae fotogramas).
   El modelo se abre en el editor en mm; las capturas se guardan en *Archivos → Modelador 3D → Capturas*.
@@ -103,7 +105,6 @@ swift test --package-path Packages/M3DKit
 - Deshacer/rehacer.
 
 ## Próximas fases
-1. Limpieza de capturas: recortar el suelo/fondo y cerrar agujeros para que sea imprimible.
-2. Mejoras de escultura: cursor del pincel, remallado por vóxeles, aceleración (BVH) para mallas grandes.
-3. Booleanas y primitivas paramétricas (bases, agujeros, encastres).
-4. Exportación 3MF y reparación automática de mallas.
+1. Mejoras de escultura: cursor del pincel, remallado por vóxeles, aceleración (BVH) para mallas grandes.
+2. Booleanas y primitivas paramétricas (bases, agujeros, encastres).
+3. Exportación 3MF y reparación automática de mallas.

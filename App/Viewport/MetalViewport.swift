@@ -15,6 +15,8 @@ struct MetalViewport: UIViewRepresentable {
     let smoothShading: Bool
     let mode: EditorMode
     let sculptSettings: SculptSettings
+    /// Altura del plano de corte a dibujar (solo en modo recorte).
+    let cutPlaneY: Float?
     let onStrokeEnded: @MainActor (Mesh, BrushKind) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -64,6 +66,7 @@ struct MetalViewport: UIViewRepresentable {
         coordinator.mode = mode
         coordinator.settings = sculptSettings
         coordinator.onStrokeEnded = onStrokeEnded
+        coordinator.renderer?.cutPlaneY = cutPlaneY
     }
 
     @MainActor

@@ -43,7 +43,7 @@ enum ShaderSource {
         if (!frontFacing) {
             color = mix(color, float3(0.85, 0.25, 0.25), 0.6);
         }
-        return float4(color, 1.0);
+        return float4(color, u.baseColor.a);
     }
     """
 }

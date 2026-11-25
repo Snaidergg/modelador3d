@@ -16,6 +16,7 @@ struct ContentView: View {
                           smoothShading: model.smoothShading,
                           mode: model.mode,
                           sculptSettings: model.sculpt,
+                          cutPlaneY: model.mode == .cut ? model.cutHeight : nil,
                           onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) })
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) { statusBar }
@@ -24,6 +25,12 @@ struct ContentView: View {
                         SculptPanel(settings: $model.sculpt,
                                     triangleCount: model.report.triangleCount,
                                     onSubdivide: { model.subdivide() })
+                    } else if model.mode == .cut {
+                        CutPanel(height: $model.cutHeight,
+                                 keepAbove: $model.cutKeepAbove,
+                                 range: model.mesh.bounds.min.y...max(model.mesh.bounds.max.y, model.mesh.bounds.min.y + 0.1),
+                                 onCancel: { model.mode = .view },
+                                 onApply: { model.applyCut() })
                     }
                 }
                 .navigationTitle(model.fileName)

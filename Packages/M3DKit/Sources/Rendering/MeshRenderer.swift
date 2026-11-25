@@ -9,10 +9,16 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
     /// Tras cambiarlo hay que volver a llamar a `setMesh`.
     public var smoothShading = true
     public var baseColor = SIMD4<Float>(0.78, 0.80, 0.84, 1)
+    /// Altura del plano de corte que se dibuja (semitransparente); `nil` para ocultarlo.
+    public var cutPlaneY: Float?
+    public var cutPlaneColor = SIMD4<Float>(0.95, 0.35, 0.30, 0.35)
 
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let blendedPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
+    private let overlayDepthState: MTLDepthStencilState
+    private var meshBounds = BoundingBox(min: .zero, max: .zero)
     private var vertexBuffer: MTLBuffer?
     private var indexBuffer: MTLBuffer?
     private var drawCount = 0
@@ -42,6 +48,7 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         view.preferredFramesPerSecond = 60
 
         let pipeline: MTLRenderPipelineState
+        let blendedPipeline: MTLRenderPipelineState
         do {
             let library = try device.makeLibrary(source: ShaderSource.code, options: nil)
             let descriptor = MTLRenderPipelineDescriptor()
@@ -51,6 +58,17 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
             descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
             descriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
             pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+
+            // Igual, pero con transparencia (para el plano de corte).
+            let attachment = descriptor.colorAttachments[0]!
+            attachment.isBlendingEnabled = true
+            attachment.rgbBlendOperation = .add
+            attachment.alphaBlendOperation = .add
+            attachment.sourceRGBBlendFactor = .sourceAlpha
+            attachment.sourceAlphaBlendFactor = .sourceAlpha
+            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
+            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            blendedPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
             print("Error creando el pipeline de Metal: \(error)")
             return nil
@@ -59,12 +77,18 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
         depthDescriptor.isDepthWriteEnabled = true
-        guard let depthState = device.makeDepthStencilState(descriptor: depthDescriptor) else { return nil }
+        let overlayDescriptor = MTLDepthStencilDescriptor()
+        overlayDescriptor.depthCompareFunction = .less
+        overlayDescriptor.isDepthWriteEnabled = false
+        guard let depthState = device.makeDepthStencilState(descriptor: depthDescriptor),
+              let overlayDepthState = device.makeDepthStencilState(descriptor: overlayDescriptor) else { return nil }
 
         self.device = device
         self.queue = queue
         self.pipeline = pipeline
+        self.blendedPipeline = blendedPipeline
         self.depthState = depthState
+        self.overlayDepthState = overlayDepthState
         super.init()
     }
 
@@ -88,6 +112,7 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
     /// Sube la malla a la GPU. Es barato llamarlo en cada movimiento del pincel:
     /// con sombreado suave solo se reenvían los vértices, no los índices.
     public func setMesh(_ mesh: Mesh) {
+        meshBounds = mesh.bounds
         guard !mesh.isEmpty else {
             vertexBuffer = nil
             indexBuffer = nil
@@ -163,6 +188,32 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         2 * distance * tan(camera.fovY * 0.5) / Float(max(viewHeight, 1))
     }
 
+    private func drawCutPlane(at y: Float, encoder: MTLRenderCommandEncoder, view: MTKView) {
+        let center = meshBounds.center
+        let half = SIMD2<Float>(max(meshBounds.size.x, 1), max(meshBounds.size.z, 1)) * 0.75
+        let n = SIMD3<Float>(0, 1, 0)
+        let corners = [
+            SIMD3<Float>(center.x - half.x, y, center.z - half.y),
+            SIMD3<Float>(center.x + half.x, y, center.z - half.y),
+            SIMD3<Float>(center.x + half.x, y, center.z + half.y),
+            SIMD3<Float>(center.x - half.x, y, center.z + half.y),
+        ]
+        var quad = [0, 1, 2, 0, 2, 3].map { GPUVertex(position: corners[$0], normal: n) }
+
+        let size = view.drawableSize
+        let aspect = Float(size.width / max(size.height, 1))
+        var uniforms = Uniforms(viewProjection: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
+                                model: matrix_identity_float4x4,
+                                baseColor: cutPlaneColor,
+                                lightDir: SIMD4<Float>(camera.viewDirection, 0))
+        encoder.setRenderPipelineState(blendedPipeline)
+        encoder.setDepthStencilState(overlayDepthState)
+        encoder.setVertexBytes(&quad, length: MemoryLayout<GPUVertex>.stride * quad.count, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: quad.count)
+    }
+
     // MARK: MTKViewDelegate
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -199,6 +250,10 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
             } else {
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: drawCount)
             }
+        }
+
+        if let planeY = cutPlaneY {
+            drawCutPlane(at: planeY, encoder: encoder, view: view)
         }
 
         encoder.endEncoding()

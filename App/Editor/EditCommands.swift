@@ -1,4 +1,5 @@
 import Geometry
+import PrintPrep
 import simd
 
 /// Patrón Comando: cada operación sobre el modelo es un objeto con nombre.
@@ -66,6 +67,40 @@ struct RotateCommand: EditCommand {
         case .z: vector = SIMD3<Float>(0, 0, 1)
         }
         return mesh.rotated(degrees: degrees, axis: vector).recentered()
+    }
+}
+
+/// Corta con un plano horizontal, conserva un lado y tapa el corte.
+struct CutCommand: EditCommand {
+    let height: Float
+    let keepAbove: Bool
+    var name: String { keepAbove ? "Recortar por debajo" : "Recortar por encima" }
+    func apply(to mesh: Mesh) -> Mesh {
+        let cut = MeshRepair.cut(mesh, planeY: height, keepAbove: keepAbove)
+        guard !cut.isEmpty else { return mesh }
+        return MeshRepair.fillHoles(cut).recentered()
+    }
+}
+
+/// Tapa todos los agujeros de la malla.
+struct FillHolesCommand: EditCommand {
+    let name = "Cerrar agujeros"
+    var reframes: Bool { false }
+    func apply(to mesh: Mesh) -> Mesh { MeshRepair.fillHoles(mesh.welded(tolerance: 0.001)) }
+}
+
+/// Elimina fragmentos sueltos (trozos de mesa, fondo, etc.).
+struct RemovePiecesCommand: EditCommand {
+    let name = "Quitar piezas sueltas"
+    func apply(to mesh: Mesh) -> Mesh { MeshRepair.removeSmallPieces(mesh.welded(tolerance: 0.001)) }
+}
+
+/// Las dos anteriores seguidas: lo habitual tras una captura.
+struct RepairForPrintCommand: EditCommand {
+    let name = "Reparar para imprimir"
+    func apply(to mesh: Mesh) -> Mesh {
+        let cleaned = MeshRepair.removeSmallPieces(mesh.welded(tolerance: 0.001))
+        return MeshRepair.fillHoles(cleaned).recentered()
     }
 }
 

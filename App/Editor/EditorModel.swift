@@ -10,6 +10,8 @@ enum EditorMode {
     case view
     /// Un dedo sobre el modelo esculpe; fuera del modelo, gira la cámara.
     case sculpt
+    /// Se muestra un plano de corte que se mueve con el panel inferior.
+    case cut
 }
 
 /// Estado del editor (MVVM: la vista observa este modelo).
@@ -29,6 +31,8 @@ final class EditorModel: ObservableObject {
     @Published var smoothShading = true
     @Published var mode: EditorMode = .view
     @Published var sculpt = SculptSettings()
+    @Published var cutHeight: Float = 0
+    @Published var cutKeepAbove = true
     @Published var fileName = "esfera"
     @Published var errorMessage: String?
 
@@ -79,6 +83,19 @@ final class EditorModel: ObservableObject {
         fileName = "cubo"
         perform(ReplaceMeshCommand(name: "Nuevo cubo",
                                    mesh: Mesh.box(size: SIMD3<Float>(30, 30, 30)).recentered()))
+    }
+
+    /// Entra en modo recorte con el plano cerca de la base (donde suele colarse el soporte o la mesa).
+    func beginCut() {
+        let b = mesh.bounds
+        cutHeight = b.min.y + b.size.y * 0.1
+        cutKeepAbove = true
+        mode = .cut
+    }
+
+    func applyCut() {
+        perform(CutCommand(height: cutHeight, keepAbove: cutKeepAbove))
+        mode = .view
     }
 
     /// Abre en el editor el modelo que salió de un escaneo, fotos o video.

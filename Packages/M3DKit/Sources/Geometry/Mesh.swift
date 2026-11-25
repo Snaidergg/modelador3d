@@ -93,6 +93,26 @@ public struct Mesh: Equatable, Sendable {
         return m
     }
 
+    /// Elimina los vértices que ningún triángulo usa.
+    public func compacted() -> Mesh {
+        var remap = [Int](repeating: -1, count: positions.count)
+        var newPositions: [SIMD3<Float>] = []
+        var newTriangles: [SIMD3<UInt32>] = []
+        newTriangles.reserveCapacity(triangles.count)
+        func index(_ old: UInt32) -> UInt32 {
+            let o = Int(old)
+            if remap[o] < 0 {
+                remap[o] = newPositions.count
+                newPositions.append(positions[o])
+            }
+            return UInt32(remap[o])
+        }
+        for t in triangles {
+            newTriangles.append(SIMD3<UInt32>(index(t.x), index(t.y), index(t.z)))
+        }
+        return Mesh(positions: newPositions, triangles: newTriangles)
+    }
+
     /// Une vértices duplicados que estén a menos de `tolerance` mm y elimina triángulos degenerados.
     /// Imprescindible tras importar STL, donde cada triángulo trae sus propios vértices.
     public func welded(tolerance: Float = 1e-4) -> Mesh {

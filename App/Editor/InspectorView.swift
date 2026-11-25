@@ -1,9 +1,11 @@
+import PrintPrep
 import SwiftUI
 
 /// Panel con información del modelo y herramientas de preparación para impresión.
 struct InspectorView: View {
     @ObservedObject var model: EditorModel
     @State private var targetHeight: Double = 50
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -39,6 +41,21 @@ struct InspectorView: View {
                     Text("Imprimibilidad")
                 } footer: {
                     Text("Para imprimir, la malla debe ser estanca: sin agujeros ni aristas compartidas por más de dos caras.")
+                }
+
+                Section {
+                    LabeledContent("Piezas separadas", value: "\(MeshRepair.pieceCount(model.mesh))")
+                    Button("Recortar con plano…", systemImage: "scissors") {
+                        model.beginCut()
+                        dismiss()
+                    }
+                    Button("Quitar piezas sueltas", systemImage: "trash.slash") { model.perform(RemovePiecesCommand()) }
+                    Button("Cerrar agujeros", systemImage: "circle.dashed.inset.filled") { model.perform(FillHolesCommand()) }
+                    Button("Reparar para imprimir", systemImage: "wand.and.stars") { model.perform(RepairForPrintCommand()) }
+                } header: {
+                    Text("Limpieza de capturas")
+                } footer: {
+                    Text("Recorta el soporte o la mesa, luego usa “Reparar para imprimir” para quitar fragmentos y tapar agujeros.")
                 }
 
                 Section("Herramientas") {
