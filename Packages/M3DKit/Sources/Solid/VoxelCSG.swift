@@ -8,16 +8,17 @@ public enum SolidError: Error, Equatable, Sendable {
     case empty
 }
 
-/// Operaciones de sólidos mediante una rejilla de distancias (vóxeles).
+/// Operaciones de sólidos mediante una rejilla de distancias (vóxeles) dispersa.
 /// Son robustas incluso con escaneos imperfectos y siempre devuelven una malla cerrada.
 /// Precio: las aristas vivas se redondean como mucho medio vóxel.
 public enum VoxelCSG {
-    /// Máximo de puntos de la rejilla (≈ 260³): unos 300 MB entre todas las estructuras.
-    public static let maxSamples = 18_000_000
+    /// Máximo de puntos guardados (≈ 200 MB entre distancias y votos).
+    public static let maxSamples = 40_000_000
 
-    /// Combina el modelo con una forma. `resolution` = vóxeles a lo largo de la dimensión mayor.
-    public static func combine(_ mesh: Mesh, with shape: ShapeSpec, operation: BooleanOperation,
-                               resolution: Int) throws -> Mesh {
+    /// Combina el modelo con una forma. El tamaño del vóxel es la dimensión mayor / `resolution`,
+    /// salvo que `spacing` lo fije directamente (por ejemplo, para que un texto pequeño se lea).
+    public static func combine(_ mesh: Mesh, with shape: some DistanceShape, operation: BooleanOperation,
+                               resolution: Int, spacing fixedSpacing: Float? = nil) throws -> Mesh {
         let bounds: BoundingBox
         switch operation {
         case .union:
@@ -28,62 +29,76 @@ public enum VoxelCSG {
             guard let overlap = intersection(mesh.bounds, shape.bounds) else { throw SolidError.empty }
             bounds = overlap
         }
-        let grid = try makeGrid(bounds, resolution: resolution, seed: mesh.vertexCount)
-        var values = MeshDistance.sample(mesh, on: grid, band: grid.spacing * 2.5)
-        for k in 0..<grid.nz {
-            for j in 0..<grid.ny {
-                for i in 0..<grid.nx {
-                    let idx = grid.index(i, j, k)
-                    let s = shape.signedDistance(grid.point(i, j, k))
-                    switch operation {
-                    case .union: values[idx] = Swift.min(values[idx], s)
-                    case .subtract: values[idx] = Swift.max(values[idx], -s)
-                    case .intersect: values[idx] = Swift.max(values[idx], s)
-                    }
+        let spacing = try voxelSize(bounds, resolution: resolution, fixed: fixedSpacing)
+        let field = SparseField(covering: bounds, spacing: spacing, jitterSeed: mesh.vertexCount)
+        let band = spacing * 2.5
+        field.allocateAround(mesh, band: band, fill: band)
+        field.allocateAround(shape, band: band, fill: band)
+        guard field.pointCount <= maxSamples else { throw SolidError.tooFine }
+
+        MeshDistance.fill(field, from: mesh, band: band)
+        field.values.withUnsafeMutableBufferPointer { v in
+            field.forEachStoredPoint { idx, i, j, k in
+                let s = shape.signedDistance(field.point(i, j, k))
+                switch operation {
+                case .union: v[idx] = Swift.min(v[idx], s)
+                case .subtract: v[idx] = Swift.max(v[idx], -s)
+                case .intersect: v[idx] = Swift.max(v[idx], s)
                 }
             }
         }
-        return try surface(values, grid: grid)
+        return try surface(field)
     }
 
     /// Reconstruye la malla con triángulos uniformes (útil antes de esculpir sobre un escaneo).
     public static func remesh(_ mesh: Mesh, resolution: Int) throws -> Mesh {
-        let grid = try makeGrid(mesh.bounds, resolution: resolution, seed: mesh.vertexCount)
-        let values = MeshDistance.sample(mesh, on: grid, band: grid.spacing * 2.5)
-        return try surface(values, grid: grid)
+        let spacing = try voxelSize(mesh.bounds, resolution: resolution, fixed: nil)
+        let field = SparseField(covering: mesh.bounds, spacing: spacing, jitterSeed: mesh.vertexCount)
+        let band = spacing * 2.5
+        field.allocateAround(mesh, band: band, fill: band)
+        guard field.pointCount <= maxSamples else { throw SolidError.tooFine }
+        MeshDistance.fill(field, from: mesh, band: band)
+        return try surface(field)
     }
 
     /// Convierte una superficie (aunque esté abierta, como un vaso escaneado) en un sólido con
     /// paredes de `thickness` mm, la mitad a cada lado de la superficie original.
     public static func thicken(_ mesh: Mesh, thickness: Float, resolution: Int) throws -> Mesh {
-        guard thickness > 0 else { throw SolidError.empty }
+        guard thickness > 0, !mesh.isEmpty else { throw SolidError.empty }
         let size = mesh.bounds.size
         // Al menos 3 vóxeles por pared, para que no aparezcan poros.
         let spacing = Swift.min(Swift.max(size.x, Swift.max(size.y, size.z)) / Float(resolution), thickness / 3)
         let padded = BoundingBox(min: mesh.bounds.min - thickness, max: mesh.bounds.max + thickness)
-        let grid = VoxelGrid(covering: padded, spacing: spacing, jitterSeed: mesh.vertexCount)
-        guard grid.count <= maxSamples else { throw SolidError.tooFine }
+        let field = SparseField(covering: padded, spacing: spacing, jitterSeed: mesh.vertexCount)
         let half = thickness / 2
-        let distances = MeshDistance.sample(mesh, on: grid, band: half + spacing * 2.5, unsigned: true)
-        return try surface(distances.map { $0 - half }, grid: grid)
+        let band = half + spacing * 2.5
+        field.allocateAround(mesh, band: band, fill: band)
+        guard field.pointCount <= maxSamples else { throw SolidError.tooFine }
+        MeshDistance.fill(field, from: mesh, band: band, unsigned: true)
+        field.values.withUnsafeMutableBufferPointer { v in
+            for i in v.indices { v[i] -= half }
+        }
+        return try surface(field)
     }
 
     // MARK: Auxiliares
 
-    static func makeGrid(_ bounds: BoundingBox, resolution: Int, seed: Int) throws -> VoxelGrid {
+    static func voxelSize(_ bounds: BoundingBox, resolution: Int, fixed: Float?) throws -> Float {
         let size = bounds.size
         let largest = Swift.max(size.x, Swift.max(size.y, size.z))
         guard largest > 0 else { throw SolidError.empty }
-        let grid = VoxelGrid(covering: bounds, spacing: largest / Float(Swift.max(resolution, 8)), jitterSeed: seed)
-        guard grid.count <= maxSamples else { throw SolidError.tooFine }
-        return grid
+        let automatic = largest / Float(Swift.max(resolution, 8))
+        guard let fixed, fixed > 0 else { return automatic }
+        return Swift.min(fixed, automatic)
     }
 
-    static func surface(_ values: [Float], grid: VoxelGrid) throws -> Mesh {
+    static func surface(_ field: SparseField) throws -> Mesh {
         // Un valor exactamente 0 crearía vértices repetidos en la misma posición.
-        let tiny = grid.spacing * 1e-4
-        let safe = values.map { $0 == 0 ? tiny : $0 }
-        let mesh = MarchingTetrahedra.extract(safe, grid: grid)
+        let tiny = field.spacing * 1e-4
+        field.values.withUnsafeMutableBufferPointer { v in
+            for i in v.indices where v[i] == 0 { v[i] = tiny }
+        }
+        let mesh = MarchingTetrahedra.extract(field)
         guard !mesh.isEmpty else { throw SolidError.empty }
         return mesh
     }

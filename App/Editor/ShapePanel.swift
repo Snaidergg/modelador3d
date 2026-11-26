@@ -15,9 +15,9 @@ enum VoxelQuality: String, CaseIterable, Identifiable {
     }
     var resolution: Int {
         switch self {
-        case .draft: 64
-        case .normal: 96
-        case .high: 144
+        case .draft: 128
+        case .normal: 192
+        case .high: 288
         }
     }
 }

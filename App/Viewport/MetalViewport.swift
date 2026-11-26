@@ -19,7 +19,7 @@ struct MetalViewport: UIViewRepresentable {
     /// Altura del plano de corte a dibujar (solo en modo recorte).
     let cutPlaneY: Float?
     /// Forma de vista previa (modo formas) y su color.
-    let overlay: ShapeSpec?
+    let overlay: Mesh?
     let overlayColor: SIMD4<Float>
     let onStrokeEnded: @MainActor (Mesh, BrushKind) -> Void
     /// Toque simple sobre el modelo en modo orientar: punto tocado e índice del triángulo.
@@ -76,7 +76,7 @@ struct MetalViewport: UIViewRepresentable {
         coordinator.renderer?.overlayColor = overlayColor
         if overlay != coordinator.lastOverlay {
             coordinator.lastOverlay = overlay
-            coordinator.renderer?.setOverlay(overlay?.mesh())
+            coordinator.renderer?.setOverlay(overlay)
         }
         coordinator.renderer?.cutPlaneY = cutPlaneY
         coordinator.renderer?.cutPlaneColor = mode == .orient
@@ -91,7 +91,7 @@ struct MetalViewport: UIViewRepresentable {
         var mesh = Mesh()
         var lastVersion = -1
         var lastFrameVersion = -1
-        var lastOverlay: ShapeSpec?
+        var lastOverlay: Mesh?
         var mode: EditorMode = .view
         var settings = SculptSettings()
         var onStrokeEnded: (@MainActor (Mesh, BrushKind) -> Void)?
@@ -280,7 +280,7 @@ struct MetalViewport: UIViewRepresentable {
         }
 
         @objc func handleTap(_ g: UITapGestureRecognizer) {
-            guard mode == .orient, let view = g.view, let renderer else { return }
+            guard mode == .orient || mode == .text, let view = g.view, let renderer else { return }
             let ray = renderer.ray(through: g.location(in: view), viewSize: view.bounds.size)
             guard let hit = mesh.raycast(ray) else { return }
             onFaceTapped?(hit.point, hit.triangle)

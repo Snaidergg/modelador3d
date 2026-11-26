@@ -3,6 +3,7 @@ import Geometry
 import MeshIO
 import PrintPrep
 import Sculpt
+import simd
 import Solid
 import SwiftUI
 
@@ -17,6 +18,8 @@ enum EditorMode {
     case orient
     /// Se muestra una forma (cubo, cilindro…) semitransparente que se une o se resta del modelo.
     case shape
+    /// Texto en relieve o grabado: tocar el modelo lo coloca.
+    case text
 }
 
 /// Estado del editor (MVVM: la vista observa este modelo).
@@ -41,6 +44,18 @@ final class EditorModel: ObservableObject {
     @Published var shape = ShapeSpec()
     @Published var shapeOperation: BooleanOperation = .union
     @Published var voxelQuality: VoxelQuality = .normal
+
+    // Texto
+    @Published var textContent = "Hola" { didSet { rebuildTextOutline() } }
+    @Published var textFont: TextFont = .bold { didSet { rebuildTextOutline() } }
+    @Published var textHeight: Float = 10 { didSet { rebuildTextOutline() } }
+    @Published var textDepth: Float = 1.5 { didSet { updateTextShape() } }
+    @Published var textEngrave = false { didSet { updateTextShape() } }
+    @Published var textRotation: Float = 0 { didSet { updateTextShape() } }
+    @Published private(set) var textShape: TextShape?
+    private var textOutline = TextOutline(loops: [], size: .zero)
+    private var textAnchor = SIMD3<Float>.zero
+    private var textNormal = SIMD3<Float>(0, 0, 1)
     /// Texto de la operación larga en curso (nil si no hay ninguna).
     @Published private(set) var busyMessage: String?
     @Published var fileName = "esfera"
@@ -155,22 +170,108 @@ final class EditorModel: ObservableObject {
     func applyShape() {
         let mesh = self.mesh, shape = self.shape, operation = shapeOperation
         let resolution = voxelQuality.resolution
+        let target = EditorModel.simplifyTarget(after: mesh)
         runHeavy("\(operation.displayName) \(shape.kind.displayName.lowercased())", onSuccess: { [weak self] in
             self?.mode = .view
         }) {
-            try VoxelCSG.combine(mesh, with: shape, operation: operation, resolution: resolution)
+            let result = try VoxelCSG.combine(mesh, with: shape, operation: operation, resolution: resolution)
+            return MeshSimplifier.simplify(result, targetTriangles: target)
         }
     }
 
     func remesh() {
         let mesh = self.mesh, resolution = voxelQuality.resolution
-        runHeavy("Remallar") { try VoxelCSG.remesh(mesh, resolution: resolution) }
+        let target = EditorModel.simplifyTarget(after: mesh)
+        runHeavy("Remallar") {
+            let result = try VoxelCSG.remesh(mesh, resolution: resolution)
+            return MeshSimplifier.simplify(result, targetTriangles: target)
+        }
     }
 
     func thicken(_ thickness: Float) {
         let mesh = self.mesh, resolution = voxelQuality.resolution
+        let target = EditorModel.simplifyTarget(after: mesh)
         runHeavy("Dar grosor de \(Format.mm(thickness)) mm") {
-            try VoxelCSG.thicken(mesh, thickness: thickness, resolution: resolution)
+            let result = try VoxelCSG.thicken(mesh, thickness: thickness, resolution: resolution)
+            return MeshSimplifier.simplify(result, targetTriangles: target)
+        }
+    }
+
+    /// Reduce los triángulos dejando una fracción `keep` (0–1).
+    func simplify(keep: Double) {
+        let mesh = self.mesh
+        let target = Swift.max(Int(Double(mesh.triangleCount) * keep), 100)
+        guard target < mesh.triangleCount else { return }
+        runHeavy("Simplificar") { MeshSimplifier.simplify(mesh, targetTriangles: target) }
+    }
+
+    /// Las operaciones con vóxeles crean muchos triángulos; se simplifica a un número parecido al del
+    /// modelo original (con un mínimo para que las formas nuevas conserven detalle).
+    private static func simplifyTarget(after original: Mesh) -> Int {
+        Swift.max(Int(Double(original.triangleCount) * 1.3), 150_000)
+    }
+
+    // MARK: Texto
+
+    func beginText() {
+        let b = mesh.bounds
+        // Por defecto, en la cara del modelo que mira al frente (+Z).
+        let ray = Ray(origin: SIMD3<Float>(b.center.x, b.center.y, b.max.z + 10), direction: SIMD3<Float>(0, 0, -1))
+        if let hit = mesh.raycast(ray) {
+            placeText(at: hit.point, triangle: hit.triangle)
+        } else {
+            textAnchor = SIMD3<Float>(b.center.x, b.center.y, b.max.z)
+            textNormal = SIMD3<Float>(0, 0, 1)
+            updateTextShape()
+        }
+        if textOutline.isEmpty { rebuildTextOutline() }
+        mode = .text
+    }
+
+    func placeText(at point: SIMD3<Float>, triangle: Int) {
+        let radius = Swift.max(textHeight * 0.5, 1)
+        textAnchor = point
+        textNormal = mesh.averageNormal(around: point, radius: radius, including: triangle)
+            ?? simd_normalize(mesh.faceNormal(triangle))
+        updateTextShape()
+    }
+
+    /// Toque en el modelo: en modo orientar apoya la cara; en modo texto coloca el texto.
+    func surfaceTapped(at point: SIMD3<Float>, triangle: Int) {
+        switch mode {
+        case .orient: layFlat(at: point, triangle: triangle)
+        case .text: placeText(at: point, triangle: triangle)
+        default: break
+        }
+    }
+
+    private func rebuildTextOutline() {
+        textOutline = TextOutline.make(textContent, font: textFont, height: textHeight)
+        updateTextShape()
+    }
+
+    private func updateTextShape() {
+        guard !textOutline.isEmpty else { textShape = nil; return }
+        // Relieve: se hunde 0,6 mm para quedar bien unido. Grabado: sobresale 1 mm para cortar limpio.
+        let bottom = textEngrave ? -textDepth : -0.6
+        let top = textEngrave ? 1.0 : textDepth
+        textShape = TextShape(outline: textOutline, anchor: textAnchor, normal: textNormal,
+                              rotation: textRotation, bottom: bottom, top: top)
+    }
+
+    func applyText() {
+        guard let shape = textShape else { return }
+        let mesh = self.mesh
+        let operation: BooleanOperation = textEngrave ? .subtract : .union
+        let resolution = voxelQuality.resolution
+        // Vóxeles lo bastante finos para que se lean las letras (≈ 18 por alto de letra).
+        let spacing = textHeight / 18
+        let target = Swift.max(EditorModel.simplifyTarget(after: mesh), 200_000)
+        let name = textEngrave ? "Grabar “\(textContent)”" : "Texto “\(textContent)”"
+        runHeavy(name, onSuccess: { [weak self] in self?.mode = .view }) {
+            let result = try VoxelCSG.combine(mesh, with: shape, operation: operation,
+                                              resolution: resolution, spacing: spacing)
+            return MeshSimplifier.simplify(result, targetTriangles: target)
         }
     }
 
@@ -195,8 +296,8 @@ final class EditorModel: ObservableObject {
     private static func describe(_ error: Error) -> String {
         switch error as? SolidError {
         case .tooFine?:
-            return "La operación necesita demasiada memoria con esta calidad. Elige una calidad menor "
-                + "(o, para dar grosor, una pared más gruesa)."
+            return "La operación necesita demasiada memoria. Elige una calidad menor, letras más grandes "
+                + "o, para dar grosor, una pared más gruesa."
         case .empty?:
             return "El resultado quedó vacío: la forma no toca el modelo o lo eliminó por completo."
         case nil:

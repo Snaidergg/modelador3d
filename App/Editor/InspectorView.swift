@@ -6,6 +6,7 @@ struct InspectorView: View {
     @ObservedObject var model: EditorModel
     @State private var targetHeight: Double = 50
     @State private var wallThickness: Double = 2
+    @State private var keepFraction: Double = 0.5
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -14,6 +15,16 @@ struct InspectorView: View {
                 Section("Malla") {
                     LabeledContent("Triángulos", value: model.report.triangleCount.formatted())
                     LabeledContent("Vértices", value: model.report.vertexCount.formatted())
+                    HStack {
+                        Text("Conservar \(Int(keepFraction * 100)) %")
+                            .monospacedDigit()
+                        Slider(value: $keepFraction, in: 0.1...0.9, step: 0.05)
+                        Button("Simplificar") {
+                            model.simplify(keep: keepFraction)
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     Toggle("Sombreado suave", isOn: $model.smoothShading)
                 }
 

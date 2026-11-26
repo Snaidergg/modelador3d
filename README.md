@@ -88,7 +88,13 @@ Se ejecutan solas en GitHub Actions. En una Mac (o en Linux con Swift):
 swift test --package-path Packages/M3DKit
 ```
 
-## Estado actual (v0.6)
+## Estado actual (v0.7)
+- **Texto 3D** (menú + → Texto en relieve o grabado): cualquier texto (con tildes y ñ), 5 fuentes, alto de letra,
+  relieve o profundidad en mm y giro. Se coloca tocando el modelo y se ajusta al plano de esa zona.
+- **Simplificar** (panel ☰ → Malla): reduce triángulos conservando la forma (método de cuádricas).
+  Se aplica solo tras cada operación con vóxeles.
+- Motor de vóxeles **disperso**: solo guarda la zona cercana a la superficie, así se puede trabajar con
+  vóxeles 2–3 veces más finos y con modelos grandes (escaneos de 20 cm) sin agotar la memoria.
 - **Formas y booleanas** (menú +): cubo, cilindro, cono o esfera con medidas en mm, vista previa
   semitransparente (verde = unir, rojo = restar, azul = intersecar), eje vertical/X/Z y posición con deslizadores.
   Útil para bases, agujeros de tornillos o imanes y recortes con forma.
@@ -115,6 +121,5 @@ swift test --package-path Packages/M3DKit
 - Deshacer/rehacer.
 
 ## Próximas fases
-1. Texto en relieve o grabado; simplificar mallas (menos triángulos tras las booleanas).
-2. Escultura más rápida en mallas grandes (BVH).
-3. Exportación 3MF y reparación automática de mallas.
+1. Escultura más rápida en mallas grandes (BVH).
+2. Exportación 3MF y reparación automática de mallas.

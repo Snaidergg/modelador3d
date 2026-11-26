@@ -1,3 +1,4 @@
+import Geometry
 import Solid
 import SwiftUI
 
@@ -18,10 +19,10 @@ struct ContentView: View {
                           mode: model.mode,
                           sculptSettings: model.sculpt,
                           cutPlaneY: planeY,
-                          overlay: model.mode == .shape ? model.shape : nil,
+                          overlay: overlayMesh,
                           overlayColor: overlayColor,
                           onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) },
-                          onFaceTapped: { point, triangle in model.layFlat(at: point, triangle: triangle) })
+                          onFaceTapped: { point, triangle in model.surfaceTapped(at: point, triangle: triangle) })
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) { statusBar }
                 .overlay(alignment: .bottom) {
@@ -44,6 +45,8 @@ struct ContentView: View {
                                    onOperationChanged: { model.changeShapeOperation($0) },
                                    onCancel: { model.mode = .view },
                                    onApply: { model.applyShape() })
+                    } else if model.mode == .text {
+                        TextPanel(model: model)
                     } else if model.mode == .orient {
                         OrientPanel(onTilt: { axis, degrees in model.tilt(axis, degrees: degrees) },
                                     onDone: { model.mode = .view })
@@ -104,9 +107,21 @@ struct ContentView: View {
         }
     }
 
+    /// Forma o texto que se muestra semitransparente antes de aplicarlo.
+    private var overlayMesh: Mesh? {
+        switch model.mode {
+        case .shape: model.shape.mesh()
+        case .text: model.textShape?.previewMesh()
+        default: nil
+        }
+    }
+
     /// Verde = unir, rojo = restar, azul = intersecar.
     private var overlayColor: SIMD4<Float> {
-        switch model.shapeOperation {
+        if model.mode == .text {
+            return model.textEngrave ? SIMD4<Float>(0.95, 0.35, 0.30, 0.6) : SIMD4<Float>(0.35, 0.80, 0.45, 0.6)
+        }
+        return switch model.shapeOperation {
         case .union: SIMD4<Float>(0.35, 0.80, 0.45, 0.40)
         case .subtract: SIMD4<Float>(0.95, 0.35, 0.30, 0.45)
         case .intersect: SIMD4<Float>(0.30, 0.55, 0.95, 0.40)
@@ -138,6 +153,7 @@ struct ContentView: View {
                 Section("Sólidos") {
                     Button("Añadir forma (unir)…", systemImage: "plus.square.on.square") { model.beginShape(.union) }
                     Button("Hacer agujero (restar)…", systemImage: "minus.square") { model.beginShape(.subtract) }
+                    Button("Texto en relieve o grabado…", systemImage: "textformat") { model.beginText() }
                 }
                 Button("Importar STL, OBJ, USDZ o PLY…", systemImage: "square.and.arrow.down") { showImporter = true }
             } label: {
