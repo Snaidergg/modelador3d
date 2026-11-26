@@ -155,8 +155,15 @@ public enum MeshRepair {
         }
 
         func cross(_ a: SIMD2<Float>, _ b: SIMD2<Float>) -> Float { a.x * b.y - a.y * b.x }
-        func strictlyInside(_ p: SIMD2<Float>, _ a: SIMD2<Float>, _ b: SIMD2<Float>, _ c: SIMD2<Float>) -> Bool {
-            cross(b - a, p - a) > 0 && cross(c - b, p - b) > 0 && cross(a - c, p - c) > 0
+        /// Dentro del triángulo o sobre su borde (un vértice sobre la diagonal también invalida la oreja).
+        func insideOrOnEdge(_ p: SIMD2<Float>, _ a: SIMD2<Float>, _ b: SIMD2<Float>, _ c: SIMD2<Float>) -> Bool {
+            if p == a || p == b || p == c { return false }
+            return cross(b - a, p - a) >= 0 && cross(c - b, p - b) >= 0 && cross(a - c, p - c) >= 0
+        }
+        func isReflex(_ k: Int, in ring: [Int]) -> Bool {
+            let m = ring.count
+            let a = points[ring[(k + m - 1) % m]], b = points[ring[k]], c = points[ring[(k + 1) % m]]
+            return cross(b - a, c - b) <= 0
         }
 
         var remaining = Array(0..<n)
@@ -172,9 +179,10 @@ public enum MeshRepair {
                 let i0 = remaining[(k + m - 1) % m], i1 = remaining[k], i2 = remaining[(k + 1) % m]
                 let a = points[i0], b = points[i1], c = points[i2]
                 if cross(b - a, c - b) <= 0 { continue } // vértice cóncavo o alineado
+                // Solo los vértices cóncavos pueden quedar dentro de una oreja.
                 var blocked = false
-                for j in remaining where j != i0 && j != i1 && j != i2 {
-                    if strictlyInside(points[j], a, b, c) { blocked = true; break }
+                for (q, j) in remaining.enumerated() where j != i0 && j != i1 && j != i2 {
+                    if isReflex(q, in: remaining), insideOrOnEdge(points[j], a, b, c) { blocked = true; break }
                 }
                 if blocked { continue }
                 result.append(SIMD3<UInt32>(polygon[i0], polygon[i1], polygon[i2]))
