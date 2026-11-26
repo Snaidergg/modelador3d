@@ -175,10 +175,11 @@ public enum MeshSimplifier {
         }
 
         func evaluate(_ p: SIMD3<Double>) -> Double {
-            let x = p.x, y = p.y, z = p.z
-            return a2 * x * x + 2 * ab * x * y + 2 * ac * x * z + 2 * ad * x
-                + b2 * y * y + 2 * bc * y * z + 2 * bd * y
-                + c2 * z * z + 2 * cd * z + d2
+            let x: Double = p.x, y: Double = p.y, z: Double = p.z
+            let rowX: Double = a2 * x + 2.0 * (ab * y + ac * z + ad)
+            let rowY: Double = b2 * y + 2.0 * (bc * z + bd)
+            let rowZ: Double = c2 * z + 2.0 * cd
+            return x * rowX + y * rowY + z * rowZ + d2
         }
 
         /// Punto que minimiza el error, si el sistema no es casi singular (zonas planas o aristas rectas).

@@ -89,39 +89,56 @@ public struct TextOutline: Equatable, Sendable {
         private var last = SIMD2<Float>.zero
 
         func add(_ path: CGPath) {
-            path.applyWithBlock { element in
-                let e = element.pointee
-                switch e.type {
-                case .moveToPoint:
-                    self.finish()
-                    self.lineTo(e.points[0])
-                case .addLineToPoint:
-                    self.lineTo(e.points[0])
-                case .addQuadCurveToPoint:
-                    let p0 = self.last, c = self.vector(e.points[0]), p1 = self.vector(e.points[1])
-                    for s in 1...6 {
-                        let t = Float(s) / 6
-                        self.append(p0 * (1 - t) * (1 - t) + c * 2 * (1 - t) * t + p1 * t * t)
-                    }
-                case .addCurveToPoint:
-                    let p0 = self.last, c1 = self.vector(e.points[0]), c2 = self.vector(e.points[1])
-                    let p1 = self.vector(e.points[2])
-                    for s in 1...8 {
-                        let t = Float(s) / 8, m = 1 - t
-                        self.append(p0 * m * m * m + c1 * 3 * m * m * t + c2 * 3 * m * t * t + p1 * t * t * t)
-                    }
-                case .closeSubpath:
-                    self.finish()
-                @unknown default:
-                    break
-                }
-            }
+            path.applyWithBlock { element in self.handle(element.pointee) }
             finish()
         }
 
-        private func vector(_ p: CGPoint) -> SIMD2<Float> { SIMD2<Float>(Float(p.x), Float(p.y)) }
+        private func handle(_ e: CGPathElement) {
+            switch e.type {
+            case .moveToPoint:
+                finish()
+                append(vector(e.points[0]))
+            case .addLineToPoint:
+                append(vector(e.points[0]))
+            case .addQuadCurveToPoint:
+                let p0 = last
+                let c = vector(e.points[0])
+                let p1 = vector(e.points[1])
+                for s in 1...6 { append(quadratic(p0, c, p1, Float(s) / 6)) }
+            case .addCurveToPoint:
+                let p0 = last
+                let c1 = vector(e.points[0])
+                let c2 = vector(e.points[1])
+                let p1 = vector(e.points[2])
+                for s in 1...8 { append(cubic(p0, c1, c2, p1, Float(s) / 8)) }
+            case .closeSubpath:
+                finish()
+            @unknown default:
+                break
+            }
+        }
 
-        private func lineTo(_ p: CGPoint) { append(vector(p)) }
+        private func quadratic(_ p0: SIMD2<Float>, _ c: SIMD2<Float>, _ p1: SIMD2<Float>, _ t: Float) -> SIMD2<Float> {
+            let m: Float = 1 - t
+            let w0: Float = m * m
+            let w1: Float = 2 * m * t
+            let w2: Float = t * t
+            return p0 * w0 + c * w1 + p1 * w2
+        }
+
+        private func cubic(_ p0: SIMD2<Float>, _ c1: SIMD2<Float>, _ c2: SIMD2<Float>, _ p1: SIMD2<Float>,
+                           _ t: Float) -> SIMD2<Float> {
+            let m: Float = 1 - t
+            let w0: Float = m * m * m
+            let w1: Float = 3 * m * m * t
+            let w2: Float = 3 * m * t * t
+            let w3: Float = t * t * t
+            let a: SIMD2<Float> = p0 * w0 + c1 * w1
+            let b: SIMD2<Float> = c2 * w2 + p1 * w3
+            return a + b
+        }
+
+        private func vector(_ p: CGPoint) -> SIMD2<Float> { SIMD2<Float>(Float(p.x), Float(p.y)) }
 
         private func append(_ p: SIMD2<Float>) {
             if let previous = current.last, simd_distance(previous, p) < 1e-4 { last = p; return }
@@ -237,10 +254,17 @@ public struct TextShape: DistanceShape, Equatable {
         for loop in outline.loops {
             var j = loop.count - 1
             for i in loop.indices {
-                let base = UInt32(positions.count)
-                positions += [place(loop[j], bottom), place(loop[i], bottom), place(loop[i], top), place(loop[j], top)]
-                triangles += [SIMD3(base, base + 1, base + 2), SIMD3(base, base + 2, base + 3),
-                              SIMD3(base, base + 2, base + 1), SIMD3(base, base + 3, base + 2)]
+                let b0 = UInt32(positions.count)
+                let b1: UInt32 = b0 + 1, b2: UInt32 = b0 + 2, b3: UInt32 = b0 + 3
+                positions.append(place(loop[j], bottom))
+                positions.append(place(loop[i], bottom))
+                positions.append(place(loop[i], top))
+                positions.append(place(loop[j], top))
+                // Por las dos caras, para que se vea desde cualquier lado.
+                triangles.append(SIMD3<UInt32>(b0, b1, b2))
+                triangles.append(SIMD3<UInt32>(b0, b2, b3))
+                triangles.append(SIMD3<UInt32>(b0, b2, b1))
+                triangles.append(SIMD3<UInt32>(b0, b3, b2))
                 j = i
             }
         }
