@@ -12,16 +12,22 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
     /// Altura del plano de corte que se dibuja (semitransparente); `nil` para ocultarlo.
     public var cutPlaneY: Float?
     public var cutPlaneColor = SIMD4<Float>(0.95, 0.35, 0.30, 0.35)
+    /// Color de la forma de vista previa (semitransparente).
+    public var overlayColor = SIMD4<Float>(0.35, 0.80, 0.45, 0.40)
 
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let blendedPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     private let overlayDepthState: MTLDepthStencilState
+    /// Sin prueba de profundidad: la forma de vista previa se ve aunque quede dentro del modelo.
+    private let ghostDepthState: MTLDepthStencilState
     private var meshBounds = BoundingBox(min: .zero, max: .zero)
     private var vertexBuffer: MTLBuffer?
     private var indexBuffer: MTLBuffer?
     private var drawCount = 0
+    private var overlayBuffer: MTLBuffer?
+    private var overlayCount = 0
     /// Topología del último índice subido: si no cambia (escultura), no se vuelve a subir.
     private var uploadedTriangles: [SIMD3<UInt32>] = []
 
@@ -80,8 +86,12 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         let overlayDescriptor = MTLDepthStencilDescriptor()
         overlayDescriptor.depthCompareFunction = .less
         overlayDescriptor.isDepthWriteEnabled = false
+        let ghostDescriptor = MTLDepthStencilDescriptor()
+        ghostDescriptor.depthCompareFunction = .always
+        ghostDescriptor.isDepthWriteEnabled = false
         guard let depthState = device.makeDepthStencilState(descriptor: depthDescriptor),
-              let overlayDepthState = device.makeDepthStencilState(descriptor: overlayDescriptor) else { return nil }
+              let overlayDepthState = device.makeDepthStencilState(descriptor: overlayDescriptor),
+              let ghostDepthState = device.makeDepthStencilState(descriptor: ghostDescriptor) else { return nil }
 
         self.device = device
         self.queue = queue
@@ -89,6 +99,7 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
         self.blendedPipeline = blendedPipeline
         self.depthState = depthState
         self.overlayDepthState = overlayDepthState
+        self.ghostDepthState = ghostDepthState
         super.init()
     }
 
@@ -157,6 +168,26 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
             uploadedTriangles = []
         }
         drawCount = mesh.triangleCount * 3
+    }
+
+    /// Malla de vista previa (por ejemplo, la forma que se va a unir o restar); `nil` para quitarla.
+    public func setOverlay(_ mesh: Mesh?) {
+        guard let mesh, !mesh.isEmpty else {
+            overlayBuffer = nil
+            overlayCount = 0
+            return
+        }
+        var vertices: [GPUVertex] = []
+        vertices.reserveCapacity(mesh.triangleCount * 3)
+        for t in mesh.triangles.indices {
+            let tri = mesh.triangles[t]
+            let n = mesh.faceNormal(t)
+            vertices.append(GPUVertex(position: mesh.positions[Int(tri.x)], normal: n))
+            vertices.append(GPUVertex(position: mesh.positions[Int(tri.y)], normal: n))
+            vertices.append(GPUVertex(position: mesh.positions[Int(tri.z)], normal: n))
+        }
+        overlayBuffer = makeBuffer(vertices)
+        overlayCount = vertices.count
     }
 
     private func makeBuffer<T>(_ array: [T]) -> MTLBuffer? {
@@ -250,6 +281,23 @@ public final class MeshRenderer: NSObject, MTKViewDelegate {
             } else {
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: drawCount)
             }
+        }
+
+        if let overlayBuffer, overlayCount > 0 {
+            let size = view.drawableSize
+            let aspect = Float(size.width / max(size.height, 1))
+            var uniforms = Uniforms(viewProjection: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
+                                    model: matrix_identity_float4x4,
+                                    baseColor: overlayColor,
+                                    lightDir: SIMD4<Float>(camera.viewDirection, 0))
+            encoder.setRenderPipelineState(blendedPipeline)
+            encoder.setDepthStencilState(ghostDepthState)
+            encoder.setCullMode(.back)
+            encoder.setVertexBuffer(overlayBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: overlayCount)
+            encoder.setCullMode(.none)
         }
 
         if let planeY = cutPlaneY {

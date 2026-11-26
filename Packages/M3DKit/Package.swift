@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "Rendering", targets: ["Rendering"]),
         .library(name: "PrintPrep", targets: ["PrintPrep"]),
         .library(name: "Sculpt", targets: ["Sculpt"]),
+        .library(name: "Solid", targets: ["Solid"]),
     ],
     targets: [
         // Estructuras de malla, primitivas y transformaciones. No depende de nada.
@@ -24,6 +25,8 @@ let package = Package(
         .target(name: "PrintPrep", dependencies: ["Geometry"]),
         // Escultura digital: pinceles, simetría.
         .target(name: "Sculpt", dependencies: ["Geometry"]),
-        .testTarget(name: "M3DKitTests", dependencies: ["Geometry", "MeshIO", "PrintPrep", "Sculpt"]),
+        // Sólidos: formas paramétricas y booleanas, remallado y grosor por vóxeles.
+        .target(name: "Solid", dependencies: ["Geometry"]),
+        .testTarget(name: "M3DKitTests", dependencies: ["Geometry", "MeshIO", "PrintPrep", "Sculpt", "Solid"]),
     ]
 )

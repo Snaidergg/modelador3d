@@ -3,6 +3,7 @@ import MetalKit
 import Rendering
 import Sculpt
 import simd
+import Solid
 import SwiftUI
 
 /// Puente entre SwiftUI y el render en Metal.
@@ -17,6 +18,9 @@ struct MetalViewport: UIViewRepresentable {
     let sculptSettings: SculptSettings
     /// Altura del plano de corte a dibujar (solo en modo recorte).
     let cutPlaneY: Float?
+    /// Forma de vista previa (modo formas) y su color.
+    let overlay: ShapeSpec?
+    let overlayColor: SIMD4<Float>
     let onStrokeEnded: @MainActor (Mesh, BrushKind) -> Void
     /// Toque simple sobre el modelo en modo orientar: punto tocado e índice del triángulo.
     let onFaceTapped: @MainActor (SIMD3<Float>, Int) -> Void
@@ -69,6 +73,11 @@ struct MetalViewport: UIViewRepresentable {
         coordinator.settings = sculptSettings
         coordinator.onStrokeEnded = onStrokeEnded
         coordinator.onFaceTapped = onFaceTapped
+        coordinator.renderer?.overlayColor = overlayColor
+        if overlay != coordinator.lastOverlay {
+            coordinator.lastOverlay = overlay
+            coordinator.renderer?.setOverlay(overlay?.mesh())
+        }
         coordinator.renderer?.cutPlaneY = cutPlaneY
         coordinator.renderer?.cutPlaneColor = mode == .orient
             ? SIMD4<Float>(0.25, 0.55, 0.95, 0.35)
@@ -82,6 +91,7 @@ struct MetalViewport: UIViewRepresentable {
         var mesh = Mesh()
         var lastVersion = -1
         var lastFrameVersion = -1
+        var lastOverlay: ShapeSpec?
         var mode: EditorMode = .view
         var settings = SculptSettings()
         var onStrokeEnded: (@MainActor (Mesh, BrushKind) -> Void)?

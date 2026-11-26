@@ -30,6 +30,7 @@ modelador3d/
 │   ├── Sources/Rendering/      Render en Metal y cámara orbital
 │   ├── Sources/PrintPrep/      Análisis de imprimibilidad (estanqueidad, volumen, normales)
 │   ├── Sources/Sculpt/         Pinceles de escultura y simetría
+│   ├── Sources/Solid/          Formas paramétricas, booleanas, remallado y grosor (vóxeles)
 │   └── Tests/                  Pruebas automáticas (se ejecutan en cada compilación)
 └── .github/workflows/          Compilación en la nube → .ipa
 ```
@@ -87,7 +88,14 @@ Se ejecutan solas en GitHub Actions. En una Mac (o en Linux con Swift):
 swift test --package-path Packages/M3DKit
 ```
 
-## Estado actual (v0.5)
+## Estado actual (v0.6)
+- **Formas y booleanas** (menú +): cubo, cilindro, cono o esfera con medidas en mm, vista previa
+  semitransparente (verde = unir, rojo = restar, azul = intersecar), eje vertical/X/Z y posición con deslizadores.
+  Útil para bases, agujeros de tornillos o imanes y recortes con forma.
+- Motor de **vóxeles** (módulo `Solid`): las booleanas siempre devuelven una malla cerrada, también con escaneos.
+  Las aristas vivas se redondean como mucho medio vóxel (≈0,2–0,4 mm según la calidad).
+- **Remallar** (triángulos uniformes) y **Dar grosor** a superficies abiertas (panel ☰ → Sólidos).
+- Nuevos modelos: cilindro y cono exactos.
 - **Orientar** (panel ☰): tocar una cara plana la apoya en la cama (plano azul); inclinar o girar en pasos de 1° y 5°.
 - **Cursor del pincel**: al esculpir se ve un círculo con el tamaño del pincel.
 - **Limpieza de capturas** (panel ☰): recortar con un plano horizontal (se ve en rojo y se mueve con un
@@ -107,7 +115,6 @@ swift test --package-path Packages/M3DKit
 - Deshacer/rehacer.
 
 ## Próximas fases
-1. Mejoras de escultura: remallado por vóxeles, aceleración (BVH) para mallas grandes.
-2. Dar grosor a superficies abiertas (vasos, cáscaras) para poder imprimirlas.
-3. Booleanas y primitivas paramétricas (bases, agujeros, encastres).
-4. Exportación 3MF y reparación automática de mallas.
+1. Texto en relieve o grabado; simplificar mallas (menos triángulos tras las booleanas).
+2. Escultura más rápida en mallas grandes (BVH).
+3. Exportación 3MF y reparación automática de mallas.

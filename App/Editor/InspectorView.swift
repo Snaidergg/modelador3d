@@ -5,6 +5,7 @@ import SwiftUI
 struct InspectorView: View {
     @ObservedObject var model: EditorModel
     @State private var targetHeight: Double = 50
+    @State private var wallThickness: Double = 2
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -60,6 +61,33 @@ struct InspectorView: View {
                     Text("Limpieza de capturas")
                 } footer: {
                     Text("Primero orienta el modelo para que quede derecho, recorta el soporte o la mesa y luego usa “Reparar para imprimir”.")
+                }
+
+                Section {
+                    Picker("Calidad", selection: $model.voxelQuality) {
+                        ForEach(VoxelQuality.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Button("Remallar (triángulos uniformes)", systemImage: "circle.grid.cross") {
+                        model.remesh()
+                        dismiss()
+                    }
+                    HStack {
+                        Text("Dar grosor")
+                        TextField("Grosor", value: $wallThickness, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                        Text("mm").foregroundStyle(.secondary)
+                        Button("Aplicar") {
+                            model.thicken(Float(wallThickness))
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                } header: {
+                    Text("Sólidos (vóxeles)")
+                } footer: {
+                    Text("“Dar grosor” convierte una superficie abierta (un vaso, una máscara) en un sólido imprimible. "
+                        + "Mayor calidad = más detalle, más triángulos y más tiempo.")
                 }
 
                 Section("Herramientas") {

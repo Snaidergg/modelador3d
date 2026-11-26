@@ -3,6 +3,7 @@ import Geometry
 import MeshIO
 import PrintPrep
 import Sculpt
+import Solid
 import SwiftUI
 
 enum EditorMode {
@@ -14,6 +15,8 @@ enum EditorMode {
     case cut
     /// Tocar una cara la apoya en la cama; el panel permite inclinar en pasos de 1° o 5°.
     case orient
+    /// Se muestra una forma (cubo, cilindro…) semitransparente que se une o se resta del modelo.
+    case shape
 }
 
 /// Estado del editor (MVVM: la vista observa este modelo).
@@ -35,6 +38,11 @@ final class EditorModel: ObservableObject {
     @Published var sculpt = SculptSettings()
     @Published var cutHeight: Float = 0
     @Published var cutKeepAbove = true
+    @Published var shape = ShapeSpec()
+    @Published var shapeOperation: BooleanOperation = .union
+    @Published var voxelQuality: VoxelQuality = .normal
+    /// Texto de la operación larga en curso (nil si no hay ninguna).
+    @Published private(set) var busyMessage: String?
     @Published var fileName = "esfera"
     @Published var errorMessage: String?
 
@@ -85,6 +93,115 @@ final class EditorModel: ObservableObject {
         fileName = "cubo"
         perform(ReplaceMeshCommand(name: "Nuevo cubo",
                                    mesh: Mesh.box(size: SIMD3<Float>(30, 30, 30)).recentered()))
+    }
+
+    func newCylinder() {
+        smoothShading = false
+        fileName = "cilindro"
+        perform(ReplaceMeshCommand(name: "Nuevo cilindro", mesh: Mesh.cylinder(radius: 15, height: 30).recentered()))
+    }
+
+    func newCone() {
+        smoothShading = false
+        fileName = "cono"
+        perform(ReplaceMeshCommand(name: "Nuevo cono",
+                                   mesh: Mesh.frustum(bottomRadius: 15, topRadius: 0, height: 30).recentered()))
+    }
+
+    // MARK: Formas y operaciones de sólidos
+
+    /// Entra en modo formas con valores útiles para la operación elegida.
+    func beginShape(_ operation: BooleanOperation = .union) {
+        shapeOperation = operation
+        shape = defaultShape(for: operation)
+        mode = .shape
+    }
+
+    /// Al cambiar de operación se propone otra forma: una base para unir, un agujero para restar.
+    func changeShapeOperation(_ operation: BooleanOperation) {
+        guard operation != shapeOperation else { return }
+        shapeOperation = operation
+        shape = defaultShape(for: operation)
+    }
+
+    private func defaultShape(for operation: BooleanOperation) -> ShapeSpec {
+        let b = mesh.bounds
+        var s = ShapeSpec()
+        s.kind = .cylinder
+        s.axis = .y
+        switch operation {
+        case .union:
+            // Base redonda bajo el modelo, solapada 0,5 mm para que quede unida.
+            s.width = Swift.max((Swift.max(b.size.x, b.size.z) * 1.2).rounded(), 5)
+            s.depth = s.width
+            s.height = 3
+            s.center = SIMD3<Float>(b.center.x, b.min.y - s.height / 2 + 0.5, b.center.z)
+        case .subtract:
+            // Agujero vertical que atraviesa el modelo (p. ej. para un tornillo o un imán).
+            s.width = Swift.max((Swift.min(b.size.x, b.size.z) * 0.2).rounded(), 2)
+            s.depth = s.width
+            s.height = b.size.y + 2
+            s.center = b.center
+        case .intersect:
+            s.kind = .box
+            s.width = b.size.x
+            s.height = b.size.y * 0.5
+            s.depth = b.size.z
+            s.center = SIMD3<Float>(b.center.x, b.min.y + s.height / 2, b.center.z)
+        }
+        return s
+    }
+
+    func applyShape() {
+        let mesh = self.mesh, shape = self.shape, operation = shapeOperation
+        let resolution = voxelQuality.resolution
+        runHeavy("\(operation.displayName) \(shape.kind.displayName.lowercased())", onSuccess: { [weak self] in
+            self?.mode = .view
+        }) {
+            try VoxelCSG.combine(mesh, with: shape, operation: operation, resolution: resolution)
+        }
+    }
+
+    func remesh() {
+        let mesh = self.mesh, resolution = voxelQuality.resolution
+        runHeavy("Remallar") { try VoxelCSG.remesh(mesh, resolution: resolution) }
+    }
+
+    func thicken(_ thickness: Float) {
+        let mesh = self.mesh, resolution = voxelQuality.resolution
+        runHeavy("Dar grosor de \(Format.mm(thickness)) mm") {
+            try VoxelCSG.thicken(mesh, thickness: thickness, resolution: resolution)
+        }
+    }
+
+    /// Ejecuta una operación pesada fuera del hilo principal y la guarda como paso deshacible.
+    private func runHeavy(_ name: String, onSuccess: (@MainActor () -> Void)? = nil,
+                          _ work: @escaping @Sendable () throws -> Mesh) {
+        guard busyMessage == nil else { return }
+        busyMessage = "\(name)…"
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { Result { try work() } }.value
+            busyMessage = nil
+            switch result {
+            case .success(let newMesh):
+                perform(ReplaceMeshCommand(name: name, mesh: newMesh.recentered()))
+                onSuccess?()
+            case .failure(let error):
+                errorMessage = EditorModel.describe(error)
+            }
+        }
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error as? SolidError {
+        case .tooFine?:
+            return "La operación necesita demasiada memoria con esta calidad. Elige una calidad menor "
+                + "(o, para dar grosor, una pared más gruesa)."
+        case .empty?:
+            return "El resultado quedó vacío: la forma no toca el modelo o lo eliminó por completo."
+        case nil:
+            return error.localizedDescription
+        }
     }
 
     /// Entra en modo recorte con el plano cerca de la base (donde suele colarse el soporte o la mesa).

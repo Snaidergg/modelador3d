@@ -1,3 +1,4 @@
+import Solid
 import SwiftUI
 
 struct ContentView: View {
@@ -17,6 +18,8 @@ struct ContentView: View {
                           mode: model.mode,
                           sculptSettings: model.sculpt,
                           cutPlaneY: planeY,
+                          overlay: model.mode == .shape ? model.shape : nil,
+                          overlayColor: overlayColor,
                           onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) },
                           onFaceTapped: { point, triangle in model.layFlat(at: point, triangle: triangle) })
                 .ignoresSafeArea(edges: .bottom)
@@ -32,11 +35,32 @@ struct ContentView: View {
                                  range: model.mesh.bounds.min.y...max(model.mesh.bounds.max.y, model.mesh.bounds.min.y + 0.1),
                                  onCancel: { model.mode = .view },
                                  onApply: { model.applyCut() })
+                    } else if model.mode == .shape {
+                        ShapePanel(shape: $model.shape,
+                                   operation: $model.shapeOperation,
+                                   quality: $model.voxelQuality,
+                                   modelBounds: model.mesh.bounds,
+                                   busy: model.busyMessage != nil,
+                                   onOperationChanged: { model.changeShapeOperation($0) },
+                                   onCancel: { model.mode = .view },
+                                   onApply: { model.applyShape() })
                     } else if model.mode == .orient {
                         OrientPanel(onTilt: { axis, degrees in model.tilt(axis, degrees: degrees) },
                                     onDone: { model.mode = .view })
                     }
                 }
+                .overlay {
+                    if let message = model.busyMessage {
+                        VStack(spacing: 10) {
+                            ProgressView()
+                            Text(message).font(.callout)
+                            Text("Puede tardar unos segundos").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                }
+                .disabled(model.busyMessage != nil)
                 .navigationTitle(model.fileName)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
@@ -80,6 +104,15 @@ struct ContentView: View {
         }
     }
 
+    /// Verde = unir, rojo = restar, azul = intersecar.
+    private var overlayColor: SIMD4<Float> {
+        switch model.shapeOperation {
+        case .union: SIMD4<Float>(0.35, 0.80, 0.45, 0.40)
+        case .subtract: SIMD4<Float>(0.95, 0.35, 0.30, 0.45)
+        case .intersect: SIMD4<Float>(0.30, 0.55, 0.95, 0.40)
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
@@ -99,6 +132,12 @@ struct ContentView: View {
                 Section("Nuevo modelo") {
                     Button("Esfera para esculpir", systemImage: "circle") { model.newSphere() }
                     Button("Cubo", systemImage: "cube") { model.newBox() }
+                    Button("Cilindro", systemImage: "cylinder") { model.newCylinder() }
+                    Button("Cono", systemImage: "cone") { model.newCone() }
+                }
+                Section("Sólidos") {
+                    Button("Añadir forma (unir)…", systemImage: "plus.square.on.square") { model.beginShape(.union) }
+                    Button("Hacer agujero (restar)…", systemImage: "minus.square") { model.beginShape(.subtract) }
                 }
                 Button("Importar STL, OBJ, USDZ o PLY…", systemImage: "square.and.arrow.down") { showImporter = true }
             } label: {
