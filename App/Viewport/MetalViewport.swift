@@ -18,6 +18,8 @@ struct MetalViewport: UIViewRepresentable {
     /// Altura del plano de corte a dibujar (solo en modo recorte).
     let cutPlaneY: Float?
     let onStrokeEnded: @MainActor (Mesh, BrushKind) -> Void
+    /// Toque simple sobre el modelo en modo orientar: punto tocado e índice del triángulo.
+    let onFaceTapped: @MainActor (SIMD3<Float>, Int) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -66,7 +68,11 @@ struct MetalViewport: UIViewRepresentable {
         coordinator.mode = mode
         coordinator.settings = sculptSettings
         coordinator.onStrokeEnded = onStrokeEnded
+        coordinator.onFaceTapped = onFaceTapped
         coordinator.renderer?.cutPlaneY = cutPlaneY
+        coordinator.renderer?.cutPlaneColor = mode == .orient
+            ? SIMD4<Float>(0.25, 0.55, 0.95, 0.35)
+            : SIMD4<Float>(0.95, 0.35, 0.30, 0.35)
     }
 
     @MainActor
@@ -79,6 +85,21 @@ struct MetalViewport: UIViewRepresentable {
         var mode: EditorMode = .view
         var settings = SculptSettings()
         var onStrokeEnded: (@MainActor (Mesh, BrushKind) -> Void)?
+        var onFaceTapped: (@MainActor (SIMD3<Float>, Int) -> Void)?
+
+        /// Círculo que muestra el tamaño del pincel mientras se esculpe.
+        private let brushCursor: CAShapeLayer = {
+            let layer = CAShapeLayer()
+            layer.fillColor = UIColor.clear.cgColor
+            layer.strokeColor = UIColor.white.withAlphaComponent(0.85).cgColor
+            layer.lineWidth = 1.5
+            layer.shadowColor = UIColor.black.cgColor
+            layer.shadowOpacity = 0.6
+            layer.shadowRadius = 1
+            layer.shadowOffset = .zero
+            layer.isHidden = true
+            return layer
+        }()
 
         // Estado del trazo en curso
         private var stroking = false
@@ -102,7 +123,12 @@ struct MetalViewport: UIViewRepresentable {
             let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
             doubleTap.numberOfTapsRequired = 2
 
-            for recognizer in [primary, pan, pinch, doubleTap] as [UIGestureRecognizer] {
+            let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+            tap.require(toFail: doubleTap)
+
+            view.layer.addSublayer(brushCursor)
+
+            for recognizer in [primary, pan, pinch, doubleTap, tap] as [UIGestureRecognizer] {
                 recognizer.delegate = self
                 view.addGestureRecognizer(recognizer)
             }
@@ -121,12 +147,16 @@ struct MetalViewport: UIViewRepresentable {
                 let start = CGPoint(x: point.x - t.x, y: point.y - t.y)
                 stroking = mode == .sculpt && beginStroke(at: start, in: view, renderer: renderer)
                 lastPoint = start
-                if stroking { continueStroke(to: point, in: view, renderer: renderer) }
+                if stroking {
+                    continueStroke(to: point, in: view, renderer: renderer)
+                    showCursor(at: strokeBrush == .grab ? start : point)
+                }
                 lastPoint = point
 
             case .changed:
                 if stroking {
                     continueStroke(to: point, in: view, renderer: renderer)
+                    if strokeBrush != .grab { showCursor(at: point) }
                 } else {
                     renderer.camera.orbit(dx: Float(point.x - lastPoint.x), dy: Float(point.y - lastPoint.y))
                 }
@@ -135,10 +165,21 @@ struct MetalViewport: UIViewRepresentable {
             case .ended, .cancelled, .failed:
                 if stroking { endStroke() }
                 stroking = false
+                brushCursor.isHidden = true
 
             default:
                 break
             }
+        }
+
+        private func showCursor(at point: CGPoint) {
+            let r = CGFloat(settings.radius)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            brushCursor.path = UIBezierPath(ovalIn: CGRect(x: point.x - r, y: point.y - r,
+                                                           width: 2 * r, height: 2 * r)).cgPath
+            brushCursor.isHidden = false
+            CATransaction.commit()
         }
 
         private func sculptEngine() -> SculptEngine {
@@ -226,6 +267,13 @@ struct MetalViewport: UIViewRepresentable {
         @objc func handlePinch(_ g: UIPinchGestureRecognizer) {
             renderer?.camera.zoom(by: Float(g.scale))
             g.scale = 1
+        }
+
+        @objc func handleTap(_ g: UITapGestureRecognizer) {
+            guard mode == .orient, let view = g.view, let renderer else { return }
+            let ray = renderer.ray(through: g.location(in: view), viewSize: view.bounds.size)
+            guard let hit = mesh.raycast(ray) else { return }
+            onFaceTapped?(hit.point, hit.triangle)
         }
 
         @objc func handleDoubleTap() {

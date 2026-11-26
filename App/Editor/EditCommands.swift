@@ -58,7 +58,7 @@ struct RotateCommand: EditCommand {
     enum Axis: String { case x = "X", y = "Y", z = "Z" }
     let axis: Axis
     var degrees: Float = 90
-    var name: String { "Girar \(Int(degrees))° en \(axis.rawValue)" }
+    var name: String { "Girar \(Int(degrees.rounded()))° en \(axis.rawValue)" }
     func apply(to mesh: Mesh) -> Mesh {
         let vector: SIMD3<Float>
         switch axis {
@@ -68,6 +68,13 @@ struct RotateCommand: EditCommand {
         }
         return mesh.rotated(degrees: degrees, axis: vector).recentered()
     }
+}
+
+/// Gira el modelo para que la cara tocada quede apoyada en la cama.
+struct LayFlatCommand: EditCommand {
+    let normal: SIMD3<Float>
+    let name = "Apoyar en una cara"
+    func apply(to mesh: Mesh) -> Mesh { mesh.laidFlat(onFaceWithNormal: normal) }
 }
 
 /// Corta con un plano horizontal, conserva un lado y tapa el corte.

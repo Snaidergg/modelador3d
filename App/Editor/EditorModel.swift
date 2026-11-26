@@ -12,6 +12,8 @@ enum EditorMode {
     case sculpt
     /// Se muestra un plano de corte que se mueve con el panel inferior.
     case cut
+    /// Tocar una cara la apoya en la cama; el panel permite inclinar en pasos de 1° o 5°.
+    case orient
 }
 
 /// Estado del editor (MVVM: la vista observa este modelo).
@@ -91,6 +93,18 @@ final class EditorModel: ObservableObject {
         cutHeight = b.min.y + b.size.y * 0.1
         cutKeepAbove = true
         mode = .cut
+    }
+
+    /// Apoya en la cama la cara tocada (se usa la normal media de la zona, para que el ruido de un
+    /// escaneo no tuerza el resultado).
+    func layFlat(at point: SIMD3<Float>, triangle: Int) {
+        let radius = max(mesh.bounds.radius * 0.04, 0.5)
+        guard let normal = mesh.averageNormal(around: point, radius: radius, including: triangle) else { return }
+        perform(LayFlatCommand(normal: normal))
+    }
+
+    func tilt(_ axis: RotateCommand.Axis, degrees: Float) {
+        perform(RotateCommand(axis: axis, degrees: degrees))
     }
 
     func applyCut() {

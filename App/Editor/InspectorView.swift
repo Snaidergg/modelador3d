@@ -45,6 +45,10 @@ struct InspectorView: View {
 
                 Section {
                     LabeledContent("Piezas separadas", value: "\(MeshRepair.pieceCount(model.mesh))")
+                    Button("Orientar (apoyar en una cara)…", systemImage: "rotate.3d") {
+                        model.mode = .orient
+                        dismiss()
+                    }
                     Button("Recortar con plano…", systemImage: "scissors") {
                         model.beginCut()
                         dismiss()
@@ -55,7 +59,7 @@ struct InspectorView: View {
                 } header: {
                     Text("Limpieza de capturas")
                 } footer: {
-                    Text("Recorta el soporte o la mesa, luego usa “Reparar para imprimir” para quitar fragmentos y tapar agujeros.")
+                    Text("Primero orienta el modelo para que quede derecho, recorta el soporte o la mesa y luego usa “Reparar para imprimir”.")
                 }
 
                 Section("Herramientas") {

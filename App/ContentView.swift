@@ -16,8 +16,9 @@ struct ContentView: View {
                           smoothShading: model.smoothShading,
                           mode: model.mode,
                           sculptSettings: model.sculpt,
-                          cutPlaneY: model.mode == .cut ? model.cutHeight : nil,
-                          onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) })
+                          cutPlaneY: planeY,
+                          onStrokeEnded: { mesh, brush in model.commitStroke(mesh, brush: brush) },
+                          onFaceTapped: { point, triangle in model.layFlat(at: point, triangle: triangle) })
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) { statusBar }
                 .overlay(alignment: .bottom) {
@@ -31,6 +32,9 @@ struct ContentView: View {
                                  range: model.mesh.bounds.min.y...max(model.mesh.bounds.max.y, model.mesh.bounds.min.y + 0.1),
                                  onCancel: { model.mode = .view },
                                  onApply: { model.applyCut() })
+                    } else if model.mode == .orient {
+                        OrientPanel(onTilt: { axis, degrees in model.tilt(axis, degrees: degrees) },
+                                    onDone: { model.mode = .view })
                     }
                 }
                 .navigationTitle(model.fileName)
@@ -64,6 +68,15 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
+        }
+    }
+
+    /// Plano que se dibuja: el de corte (rojo) o la cama de impresión (azul) al orientar.
+    private var planeY: Float? {
+        switch model.mode {
+        case .cut: return model.cutHeight
+        case .orient: return model.mesh.bounds.min.y
+        default: return nil
         }
     }
 
